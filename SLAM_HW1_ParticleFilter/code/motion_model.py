@@ -20,10 +20,20 @@ class MotionModel:
         TODO : Tune Motion Model parameters here
         The original numbers are for reference but HAVE TO be tuned.
         """
-        self._alpha1 = 0.075
-        self._alpha2 = 0.075
-        self._alpha3 = 0.2
-        self._alpha4 = 0.075
+        self._alpha1 = 0.00001
+        self._alpha2 = 0.00001
+        self._alpha3 = 0.005
+        self._alpha4 = 0.005
+
+    def _wrap_angle(self, a):
+        """
+        Helper function to wrap angles to the range [-pi, pi]
+        """
+        while a <= -np.pi:
+            a += 2 * np.pi
+        while a > np.pi:
+            a -= 2 * np.pi
+        return a
 
     def update(self, u_t0, u_t1, x_t0):
         """
@@ -38,6 +48,10 @@ class MotionModel:
         del_rot1 = math.atan2(u_t1[1] - u_t0[1], u_t1[0] - u_t0[0]) - u_t0[2]
         del_trans = math.sqrt((u_t1[0] - u_t0[0]) ** 2 + (u_t1[1] - u_t0[1]) ** 2)
         del_rot2 = u_t1[2] - u_t0[2] - del_rot1
+
+        # Wrap angles
+        del_rot1 = self._wrap_angle(del_rot1)
+        del_rot2 = self._wrap_angle(del_rot2)
 
         del_rot1_hat = del_rot1 - np.random.normal(
             0, np.sqrt(self._alpha1 * del_rot1**2 + self._alpha2 * del_trans**2)
@@ -60,6 +74,6 @@ class MotionModel:
         x_t1[2] = x_t0[2] + del_rot1_hat + del_rot2_hat
 
         # Angle wrapping to keep angles in range [-pi, pi]
-        x_t1[2] = math.atan2(math.sin(x_t1[2]), math.cos(x_t1[2]))
+        x_t1[2] = self._wrap_angle(x_t1[2])
 
         return x_t1
