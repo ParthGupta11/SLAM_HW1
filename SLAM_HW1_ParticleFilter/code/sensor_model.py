@@ -23,12 +23,12 @@ class SensorModel:
         TODO : Tune Sensor Model parameters here
         The original numbers are for reference but HAVE TO be tuned.
         """
-        self._z_hit = 1
-        self._z_short = 0.1
-        self._z_max = 0.1
-        self._z_rand = 100
+        self._z_hit = 0.8
+        self._z_short = 0.05
+        self._z_max = 0.05
+        self._z_rand = 0.1
 
-        self._sigma_hit = 50
+        self._sigma_hit = 100
         self._lambda_short = 0.1
 
         # Used in p_max and p_rand, optionally in ray casting
@@ -88,15 +88,20 @@ class SensorModel:
                 y_curr = y_laser + dist * sin_angle
 
                 # converting to map grid indices
-                col = int(x_curr / resolution)
-                row = int(y_curr / resolution)
+                # Following map_reader.py convention: shape[0] is X, shape[1] is Y
+                x_idx = int(x_curr / resolution)
+                y_idx = int(y_curr / resolution)
+
+                # np.flipud flips the first dimension (X)
+                x_idx_flipped = map_rows - 1 - x_idx
 
                 # bound check
-                if row < 0 or row >= map_rows or col < 0 or col >= map_cols:
+                if x_idx_flipped < 0 or x_idx_flipped >= map_rows or y_idx < 0 or y_idx >= map_cols:
+                    dist = max_range
                     break
 
                 # check occupancy
-                cell = self._occupancy_map[row, col]
+                cell = self._occupancy_map[x_idx_flipped, y_idx]
                 if cell >= min_prob or cell < 0:
                     break
 
@@ -122,8 +127,8 @@ class SensorModel:
         sigma = self._sigma_hit
         lam = self._lambda_short
 
-        # Compute probability as a product over all beams
-        prob_zt1 = 1.0
+        # Use log-probability to avoid underflow
+        log_prob_zt1 = 0.0
 
         for j in range(len(beam_indices)):
             z_k = z_actual[j]      # actual measurement for beam j
@@ -131,21 +136,20 @@ class SensorModel:
 
             # p_hit - it is the probability of the measurement given the expected range
             if 0 <= z_k <= z_max:
+                # Normalization factor for truncated Gaussian
                 eta = 1.0 / (norm.cdf(z_max, loc=z_k_star, scale=sigma)
-                             - norm.cdf(0.0, loc=z_k_star, scale=sigma))
+                             - norm.cdf(0.0, loc=z_k_star, scale=sigma) + 1e-9)
                 p_hit = eta * norm.pdf(z_k, loc=z_k_star, scale=sigma)
             else:
                 p_hit = 0.0
 
-
             if 0 <= z_k <= z_k_star and z_k_star > 0:
-                eta_short = 1.0 / (1.0 - math.exp(-lam * z_k_star))
+                eta_short = 1.0 / (1.0 - math.exp(-lam * z_k_star) + 1e-9)
                 p_short = eta_short * lam * math.exp(-lam * z_k)
             else:
                 p_short = 0.0
 
-            #
-            p_max = 1.0 if abs(z_k - z_max) < 1e-3 else 0.0
+            p_max = 1.0 if z_k >= z_max - self._map_resolution else 0.0
 
             if 0 <= z_k < z_max:
                 p_rand = 1.0 / z_max
@@ -158,7 +162,6 @@ class SensorModel:
                  + self._z_rand * p_rand)
 
             # avoiding numerical issues
-            p= max(p,1e-9)
-            prob_zt1 *= p
+            log_prob_zt1 += np.log(max(p, 1e-9))
 
-        return prob_zt1
+        return math.exp(log_prob_zt1)
