@@ -161,7 +161,7 @@ if __name__ == "__main__":
             """
             SENSOR MODEL
             """
-            if meas_type == "L" and False:
+            if meas_type == "L":
                 z_t = ranges
                 w_t = sensor_model.beam_range_finder_model(z_t, x_t1)
                 X_bar_new[m, :] = np.hstack((x_t1, w_t))
