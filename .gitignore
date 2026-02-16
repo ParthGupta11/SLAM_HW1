@@ -1,3 +1,6 @@
 *.venv
 *__pycache__/
 *.vscode/
+AGENTS.md
+Probabilistic-Robotics-en.md
+writeup_16833_HW1_ParticleFilter.md

@@ -56,5 +56,6 @@ class Resampling:
                     break
                 c += X_bar[i, 3]
             X_bar_resampled[m] = X_bar[i]
+            X_bar_resampled[m, 3] = 1.0 / M
 
         return X_bar_resampled

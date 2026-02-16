@@ -23,22 +23,22 @@ class SensorModel:
         TODO : Tune Sensor Model parameters here
         The original numbers are for reference but HAVE TO be tuned.
         """
-        self._z_hit = 1
-        self._z_short = 0.1
-        self._z_max = 0.1
-        self._z_rand = 100
+        self._z_hit = 5
+        self._z_short = 0.2
+        self._z_max = 1
+        self._z_rand = 250
 
         self._sigma_hit = 50
         self._lambda_short = 0.1
 
         # Used in p_max and p_rand, optionally in ray casting
-        self._max_range = 8000
+        self._max_range = 1000
 
         # Used for thresholding obstacles of the occupancy map
         self._min_probability = 0.35
 
         # Used in sampling angles in ray casting
-        self._subsampling = 2
+        self._subsampling = 5
 
         # offset of the laser from the robot center
         self._laser_offset = 25.0
@@ -47,7 +47,7 @@ class SensorModel:
         self._map_resolution = 10.0
 
         # step size for raycasting
-        self._ray_step_size = 6.0
+        self._ray_step_size = 10
 
         self._occupancy_map = occupancy_map
 
@@ -97,7 +97,7 @@ class SensorModel:
 
                 # check occupancy
                 cell = self._occupancy_map[row, col]
-                if cell >= min_prob or cell < 0:
+                if cell > min_prob:
                     break
 
             z_t_star[i] = min(dist, max_range)
@@ -122,8 +122,8 @@ class SensorModel:
         sigma = self._sigma_hit
         lam = self._lambda_short
 
-        # Compute probability as a product over all beams
-        prob_zt1 = 1.0
+        # Compute probability in log-space to avoid underflow
+        log_prob = 0.0
 
         for j in range(len(beam_indices)):
             z_k = z_actual[j]      # actual measurement for beam j
@@ -131,9 +131,7 @@ class SensorModel:
 
             # p_hit - it is the probability of the measurement given the expected range
             if 0 <= z_k <= z_max:
-                eta = 1.0 / (norm.cdf(z_max, loc=z_k_star, scale=sigma)
-                             - norm.cdf(0.0, loc=z_k_star, scale=sigma))
-                p_hit = eta * norm.pdf(z_k, loc=z_k_star, scale=sigma)
+                p_hit = norm.pdf(z_k, loc=z_k_star, scale=sigma)
             else:
                 p_hit = 0.0
 
@@ -145,7 +143,7 @@ class SensorModel:
                 p_short = 0.0
 
             #
-            p_max = 1.0 if abs(z_k - z_max) < 1e-3 else 0.0
+            p_max = 1.0 if z_k >= z_max else 0.0
 
             if 0 <= z_k < z_max:
                 p_rand = 1.0 / z_max
@@ -157,8 +155,6 @@ class SensorModel:
                  + self._z_max * p_max
                  + self._z_rand * p_rand)
 
-            # avoiding numerical issues
-            p= max(p,1e-9)
-            prob_zt1 *= p
+            log_prob += math.log(max(p, 1e-10))
 
-        return prob_zt1
+        return math.exp(log_prob)
