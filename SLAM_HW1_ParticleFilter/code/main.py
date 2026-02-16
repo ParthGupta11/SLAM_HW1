@@ -163,7 +163,8 @@ if __name__ == "__main__":
         """
         # TODO: Reduce resampling freq when robot is moving
         # TODO: Disable resampling freq when robot is not moving
-        X_bar = resampler.low_variance_sampler(X_bar)
+        if meas_type == "L":
+            X_bar = resampler.low_variance_sampler(X_bar)
 
         if args.visualize:
             visualize_timestep(X_bar, time_idx, args.output)

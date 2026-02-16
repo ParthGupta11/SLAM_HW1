@@ -24,7 +24,7 @@ class SensorModel:
         TODO : Tune Sensor Model parameters here
         The original numbers are for reference but HAVE TO be tuned.
         """
-        self._z_hit = 5
+        self._z_hit = 50
         self._z_short = 0.2
         self._z_max = 1
         self._z_rand = 250
@@ -33,7 +33,7 @@ class SensorModel:
         self._lambda_short = 0.1
 
         # Used in p_max and p_rand, optionally in ray casting
-        self._max_range = 1000
+        self._max_range = 4000
 
         # Used for thresholding obstacles of the occupancy map
         self._min_probability = 0.35
