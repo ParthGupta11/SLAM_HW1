@@ -17,6 +17,7 @@ class Resampling:
         """
         TODO : Initialize resampling process parameters here
         """
+        self.resampling_calls = 0
 
     def multinomial_sampler(self, X_bar):
         """
@@ -37,6 +38,13 @@ class Resampling:
         """
         TODO : Add your code here
         """
+
+        # Throttle resampling when robot is moving
+        self.resampling_calls += 1
+        if self.resampling_calls % 5 != 0:
+            print("Throttling resampling. Call count: {}".format(self.resampling_calls))
+            return X_bar
+
         X_bar_resampled = np.zeros_like(X_bar)
 
         # Normalize weights to sum to 1

@@ -73,6 +73,27 @@ def init_particles_freespace(num_particles, occupancy_map):
     return X_bar_init
 
 
+def is_robot_moving(u_t0, u_t1, threshold=0.01):
+    """
+    TODO : Add your code here
+    Return True if robot is moving based on odometry readings u_t0 and u_t1
+    """
+    dx = u_t1[0] - u_t0[0]
+    dy = u_t1[1] - u_t0[1]
+    dtheta = u_t1[2] - u_t0[2]
+    distance = np.sqrt(dx**2 + dy**2)
+    is_moving_xy = distance > threshold
+    is_moving_theta = abs(dtheta) > threshold
+    is_moving = is_moving_xy or is_moving_theta
+    if not is_moving:
+        print(
+            "Distance: {}, dTheta: {}, Moving XY: {}, Moving Theta: {}. Skipping resampling.".format(
+                distance, dtheta, is_moving_xy, is_moving_theta
+            )
+        )
+    return is_moving
+
+
 if __name__ == "__main__":
     """
     Description of variables used
@@ -156,15 +177,17 @@ if __name__ == "__main__":
             X_bar = np.column_stack((X_t1, weights))
         else:
             X_bar = np.column_stack((X_t1, X_bar[:, 3]))
-        u_t0 = u_t1
 
         """
         RESAMPLING
         """
         # TODO: Reduce resampling freq when robot is moving
         # TODO: Disable resampling freq when robot is not moving
-        if meas_type == "L":
+        if meas_type == "L" and is_robot_moving(u_t0, u_t1):
             X_bar = resampler.low_variance_sampler(X_bar)
 
         if args.visualize:
             visualize_timestep(X_bar, time_idx, args.output)
+
+        # Update previous odometry reading for next time step
+        u_t0 = u_t1
