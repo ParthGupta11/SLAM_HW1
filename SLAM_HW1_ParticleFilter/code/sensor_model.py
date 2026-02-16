@@ -4,6 +4,7 @@
     Updated by Wei Dong (weidong@andrew.cmu.edu), 2021
 '''
 
+import os
 import numpy as np
 import math
 import time
@@ -51,56 +52,108 @@ class SensorModel:
 
         self._occupancy_map = occupancy_map
 
+        # Precomputed ray casting lookup table
+        self._ray_cast_table = self._load_or_compute_ray_table()
+
+    def _load_or_compute_ray_table(self):
+        cache_path = os.path.join(os.path.dirname(__file__), '..', 'data', 'ray_cast_table.npy')
+        if os.path.exists(cache_path):
+            print("Loading precomputed ray cast table...")
+            table = np.load(cache_path)
+            print(f"Loaded ray cast table: shape={table.shape}, size={table.nbytes/1e6:.1f} MB")
+            return table
+
+        print("Precomputing ray cast table (one-time, ~1-2 min)...")
+        table = self._precompute_ray_table()
+        np.save(cache_path, table)
+        print(f"Saved ray cast table to {cache_path}")
+        return table
+
+    def _precompute_ray_table(self):
+        map_rows, map_cols = self._occupancy_map.shape
+        table = np.full((map_rows, map_cols, 360), self._max_range, dtype=np.float16)
+
+        resolution = self._map_resolution
+        step = self._ray_step_size
+        max_range = self._max_range
+        num_steps = int(max_range / step)
+        min_prob = self._min_probability
+
+        # Grid of cell centers (world coords)
+        cols_arr = np.arange(map_cols) * resolution + resolution / 2.0
+        rows_arr = np.arange(map_rows) * resolution + resolution / 2.0
+        x_origins, y_origins = np.meshgrid(cols_arr, rows_arr)
+
+        for angle_deg in range(360):
+            angle_rad = np.deg2rad(angle_deg)
+            cos_a = np.cos(angle_rad)
+            sin_a = np.sin(angle_rad)
+
+            # Track which cells still haven't hit an obstacle
+            active = np.ones((map_rows, map_cols), dtype=bool)
+
+            for s in range(1, num_steps + 1):
+                dist = s * step
+                x_curr = x_origins + dist * cos_a
+                y_curr = y_origins + dist * sin_a
+
+                c = (x_curr / resolution).astype(int)
+                r = (y_curr / resolution).astype(int)
+
+                # Bounds check
+                out_of_bounds = (r < 0) | (r >= map_rows) | (c < 0) | (c >= map_cols)
+
+                # Safe indexing for occupancy check
+                r_safe = np.clip(r, 0, map_rows - 1)
+                c_safe = np.clip(c, 0, map_cols - 1)
+                hit_obstacle = self._occupancy_map[r_safe, c_safe] > min_prob
+
+                # Cells that just terminated this step
+                newly_done = active & (out_of_bounds | hit_obstacle)
+                table[:, :, angle_deg] = np.where(
+                    newly_done, np.float16(dist), table[:, :, angle_deg]
+                )
+                active &= ~newly_done
+
+                if not np.any(active):
+                    break
+
+            if angle_deg % 60 == 0:
+                print(f"  Progress: {angle_deg}/360 angles")
+
+        print("  Progress: 360/360 angles")
+        return table
+
     def ray_casting(self, x_t1):
         """
-        Perform ray casting from particle pose to get expected range measurements.
-        Basically for each laser beam, cast a ray from the laser's position
+        Perform ray casting using precomputed lookup table.
+        For each laser beam, look up the expected range from the table.
         """
-        # Compute laser position in world frame
-        # offset of the laster
         theta = x_t1[2]
         x_laser = x_t1[0] + self._laser_offset * math.cos(theta)
         y_laser = x_t1[1] + self._laser_offset * math.sin(theta)
 
-        # subsampling the beams
         beam_indices = np.arange(0, 180, self._subsampling)
         num_beams = len(beam_indices)
         z_t_star = np.zeros(num_beams)
 
         map_rows, map_cols = self._occupancy_map.shape
-        step = self._ray_step_size
-        max_range = self._max_range
-        min_prob = self._min_probability
         resolution = self._map_resolution
 
+        # Convert laser position to cell coordinates
+        col = int(x_laser / resolution)
+        row = int(y_laser / resolution)
+
+        # Bounds check — if laser is off map, return max_range for all beams
+        if row < 0 or row >= map_rows or col < 0 or col >= map_cols:
+            z_t_star[:] = self._max_range
+            return z_t_star
+
         for i, k in enumerate(beam_indices):
-            # angle of the beam
-            # convert to to range of -90 to 90 degrees
             beam_angle = theta + math.radians(-90 + k)
-            cos_angle = math.cos(beam_angle)
-            sin_angle = math.sin(beam_angle)
-
-            # raycasting
-            dist = 0.0
-            while dist < max_range:
-                dist += step
-                x_curr = x_laser + dist * cos_angle
-                y_curr = y_laser + dist * sin_angle
-
-                # converting to map grid indices
-                col = int(x_curr / resolution)
-                row = int(y_curr / resolution)
-
-                # bound check
-                if row < 0 or row >= map_rows or col < 0 or col >= map_cols:
-                    break
-
-                # check occupancy
-                cell = self._occupancy_map[row, col]
-                if cell > min_prob:
-                    break
-
-            z_t_star[i] = min(dist, max_range)
+            # Convert to degree index [0, 360)
+            angle_deg = int(math.degrees(beam_angle)) % 360
+            z_t_star[i] = self._ray_cast_table[row, col, angle_deg]
 
         return z_t_star
 
