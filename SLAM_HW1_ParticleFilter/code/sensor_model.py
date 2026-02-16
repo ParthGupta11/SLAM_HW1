@@ -216,3 +216,77 @@ class SensorModel:
             log_prob += math.log(max(p, 1e-10))
 
         return math.exp(log_prob)
+
+    def beam_range_finder_model_vectorized(self, z_t1_arr, X_t1):
+        """
+        Vectorized beam range finder for all particles at once.
+        param[in] z_t1_arr : laser range readings [array of 180 values] at time t
+        param[in] X_t1 : (N, 3) array of [x, y, theta] for all particles
+        param[out] weights : (N,) array of likelihoods
+        """
+        N = X_t1.shape[0]
+        beam_indices = np.arange(0, 180, self._subsampling)
+
+        # --- Vectorized ray casting for all particles ---
+        thetas = X_t1[:, 2]
+        x_lasers = X_t1[:, 0] + self._laser_offset * np.cos(thetas)
+        y_lasers = X_t1[:, 1] + self._laser_offset * np.sin(thetas)
+
+        cols = (x_lasers / self._map_resolution).astype(int)
+        rows = (y_lasers / self._map_resolution).astype(int)
+        map_rows, map_cols = self._occupancy_map.shape
+
+        # Beam angles for all particles: (N, num_beams)
+        beam_angles_deg = (np.rad2deg(
+            thetas[:, None] + np.deg2rad(-90 + beam_indices[None, :])
+        )).astype(int) % 360
+
+        # Clamp out-of-bounds particles
+        valid = (rows >= 0) & (rows < map_rows) & (cols >= 0) & (cols < map_cols)
+        rows_safe = np.clip(rows, 0, map_rows - 1)
+        cols_safe = np.clip(cols, 0, map_cols - 1)
+
+        # Look up expected ranges: (N, num_beams)
+        z_star = self._ray_cast_table[rows_safe[:, None], cols_safe[:, None], beam_angles_deg]
+        z_star = z_star.astype(np.float64)
+        z_star[~valid] = self._max_range
+
+        # Actual measurements: (1, num_beams) for broadcasting
+        z_k = z_t1_arr[beam_indices][None, :]
+
+        z_max = self._max_range
+        sigma = self._sigma_hit
+        lam = self._lambda_short
+
+        # --- Vectorized probability computation ---
+        # p_hit: inline Gaussian
+        in_range = (z_k >= 0) & (z_k <= z_max)
+        gauss = (1.0 / (sigma * np.sqrt(2 * np.pi))) * np.exp(
+            -0.5 * ((z_k - z_star) / sigma) ** 2
+        )
+        p_hit = np.where(in_range, gauss, 0.0)
+
+        # p_short: exponential
+        short_valid = (z_k >= 0) & (z_k <= z_star) & (z_star > 0)
+        eta_short = np.where(
+            z_star > 0,
+            1.0 / np.maximum(1.0 - np.exp(-lam * z_star), 1e-10),
+            0.0,
+        )
+        p_short = np.where(
+            short_valid, eta_short * lam * np.exp(-lam * z_k), 0.0
+        )
+
+        # p_max
+        p_max = np.where(z_k >= z_max, 1.0, 0.0)
+
+        # p_rand
+        p_rand = np.where((z_k >= 0) & (z_k < z_max), 1.0 / z_max, 0.0)
+
+        # Combined probability per beam: (N, num_beams)
+        p = (self._z_hit * p_hit + self._z_short * p_short
+             + self._z_max * p_max + self._z_rand * p_rand)
+
+        # Log-space sum across beams, then exp
+        log_prob = np.sum(np.log(np.maximum(p, 1e-10)), axis=1)
+        return np.exp(log_prob)

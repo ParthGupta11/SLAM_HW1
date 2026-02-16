@@ -128,7 +128,7 @@ if __name__ == "__main__":
         odometry_robot = meas_vals[0:3]
         time_stamp = meas_vals[-1]
 
-        # ignore pure odometry measurements for (faster debugging)
+        # ignore pure odometry measurements for faster processing
         # if ((time_stamp <= 0.0) | (meas_type == "O")):
         #     continue
 
@@ -145,30 +145,17 @@ if __name__ == "__main__":
             first_time_idx = False
             continue
 
-        # X_bar_new[i] = [x, y, theta, wt] for the i-th particle
-        X_bar_new = np.zeros((num_particles, 4), dtype=np.float64)
         u_t1 = odometry_robot
 
-        # Note: this formulation is intuitive but not vectorized; looping in python is SLOW.
-        # Vectorized version will receive a bonus. i.e., the functions take all particles as the input and process them in a vector.
-        for m in range(0, num_particles):
-            """
-            MOTION MODEL
-            """
-            x_t0 = X_bar[m, 0:3]
-            x_t1 = motion_model.update(u_t0, u_t1, x_t0)
+        # Vectorized motion model update (all particles at once)
+        X_t1 = motion_model.update_vectorized(u_t0, u_t1, X_bar[:, 0:3])
 
-            """
-            SENSOR MODEL
-            """
-            if meas_type == "L":
-                z_t = ranges
-                w_t = sensor_model.beam_range_finder_model(z_t, x_t1)
-                X_bar_new[m, :] = np.hstack((x_t1, w_t))
-            else:
-                X_bar_new[m, :] = np.hstack((x_t1, X_bar[m, 3]))
-
-        X_bar = X_bar_new
+        # Vectorized sensor model update (all particles at once)
+        if meas_type == "L":
+            weights = sensor_model.beam_range_finder_model_vectorized(ranges, X_t1)
+            X_bar = np.column_stack((X_t1, weights))
+        else:
+            X_bar = np.column_stack((X_t1, X_bar[:, 3]))
         u_t0 = u_t1
 
         """
