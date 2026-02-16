@@ -48,7 +48,7 @@ class SensorModel:
         self._map_resolution = 10.0
 
         # step size for raycasting
-        self._ray_step_size = 10
+        self._ray_step_size = 5
 
         self._occupancy_map = occupancy_map
 
@@ -79,44 +79,49 @@ class SensorModel:
         num_steps = int(max_range / step)
         min_prob = self._min_probability
 
-        # Grid of cell centers (world coords)
-        cols_arr = np.arange(map_cols) * resolution + resolution / 2.0
-        rows_arr = np.arange(map_rows) * resolution + resolution / 2.0
-        x_origins, y_origins = np.meshgrid(cols_arr, rows_arr)
+        # Only compute for free-space cells (not obstacles or unknown)
+        # This reduces work from ~640K cells to ~10K cells (~64x speedup)
+        free_mask = (self._occupancy_map >= 0) & (self._occupancy_map < min_prob)
+        free_rows, free_cols = np.where(free_mask)
+        num_free = len(free_rows)
+        print(f"  Computing rays for {num_free} free-space cells "
+              f"(skipping {map_rows * map_cols - num_free} obstacle/unknown cells)")
+
+        # World coordinates of free cell centers
+        x_free = free_cols.astype(np.float64) * resolution + resolution / 2.0
+        y_free = free_rows.astype(np.float64) * resolution + resolution / 2.0
 
         for angle_deg in range(360):
-            angle_rad = np.deg2rad(angle_deg)
-            cos_a = np.cos(angle_rad)
-            sin_a = np.sin(angle_rad)
+            cos_a = math.cos(math.radians(angle_deg))
+            sin_a = math.sin(math.radians(angle_deg))
 
-            # Track which cells still haven't hit an obstacle
-            active = np.ones((map_rows, map_cols), dtype=bool)
+            active = np.ones(num_free, dtype=bool)
+            distances = np.full(num_free, max_range, dtype=np.float16)
 
             for s in range(1, num_steps + 1):
+                if not np.any(active):
+                    break
                 dist = s * step
-                x_curr = x_origins + dist * cos_a
-                y_curr = y_origins + dist * sin_a
+
+                # Only compute for still-active cells
+                idx = np.where(active)[0]
+                x_curr = x_free[idx] + dist * cos_a
+                y_curr = y_free[idx] + dist * sin_a
 
                 c = (x_curr / resolution).astype(int)
                 r = (y_curr / resolution).astype(int)
 
-                # Bounds check
-                out_of_bounds = (r < 0) | (r >= map_rows) | (c < 0) | (c >= map_cols)
+                oob = (r < 0) | (r >= map_rows) | (c < 0) | (c >= map_cols)
+                r_s = np.clip(r, 0, map_rows - 1)
+                c_s = np.clip(c, 0, map_cols - 1)
+                hit = self._occupancy_map[r_s, c_s] > min_prob
 
-                # Safe indexing for occupancy check
-                r_safe = np.clip(r, 0, map_rows - 1)
-                c_safe = np.clip(c, 0, map_cols - 1)
-                hit_obstacle = self._occupancy_map[r_safe, c_safe] > min_prob
+                done = oob | hit
+                distances[idx[done]] = np.float16(dist)
+                active[idx[done]] = False
 
-                # Cells that just terminated this step
-                newly_done = active & (out_of_bounds | hit_obstacle)
-                table[:, :, angle_deg] = np.where(
-                    newly_done, np.float16(dist), table[:, :, angle_deg]
-                )
-                active &= ~newly_done
-
-                if not np.any(active):
-                    break
+            # Write results back to full table
+            table[free_rows, free_cols, angle_deg] = distances
 
             if angle_deg % 60 == 0:
                 print(f"  Progress: {angle_deg}/360 angles")
