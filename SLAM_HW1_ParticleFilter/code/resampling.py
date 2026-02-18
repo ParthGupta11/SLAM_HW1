@@ -67,3 +67,38 @@ class Resampling:
             X_bar_resampled[m, 3] = 1.0 / M
 
         return X_bar_resampled
+
+    def low_variance_sampler_vectorised(self, X_bar):
+        """
+        Vectorized version of low-variance sampler.
+        Uses cumulative-sum + `np.searchsorted` to avoid Python loops.
+        Returns a resampled `X_bar` with uniform weights (1/M).
+        """
+        self.resampling_calls += 1
+
+        # Throttle resampling
+        if self.resampling_calls % 5 != 0:
+            print(
+                "Throttling resampling (vectorised). Call count: {}".format(
+                    self.resampling_calls
+                )
+            )
+            return X_bar
+
+        M = X_bar.shape[0]
+
+        weights = X_bar[:, 3].astype(np.float64)
+        w_sum = np.sum(weights)
+        weights = weights / w_sum
+
+        r = np.random.uniform(0, 1.0 / M)
+        positions = r + np.arange(M) * (1.0 / M)
+
+        cumulative = np.cumsum(weights)
+        indices = np.searchsorted(cumulative, positions, side="left")
+        indices = np.clip(indices, 0, M - 1)
+
+        X_bar_resampled = X_bar[indices].copy()
+        X_bar_resampled[:, 3] = 1.0 / M
+
+        return X_bar_resampled
