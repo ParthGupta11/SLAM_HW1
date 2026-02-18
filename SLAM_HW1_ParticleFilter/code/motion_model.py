@@ -20,8 +20,8 @@ class MotionModel:
         TODO : Tune Motion Model parameters here
         The original numbers are for reference but HAVE TO be tuned.
         """
-        self._alpha1 = 0.0005
-        self._alpha2 = 0.0005
+        self._alpha1 = 0.00065
+        self._alpha2 = 0.00065
         self._alpha3 = 0.005
         self._alpha4 = 0.005
 
@@ -90,7 +90,7 @@ class MotionModel:
 
         # Odometry deltas (same for all particles)
         d_rot1 = math.atan2(u_t1[1] - u_t0[1], u_t1[0] - u_t0[0]) - u_t0[2]
-        d_trans = math.sqrt((u_t1[0] - u_t0[0])**2 + (u_t1[1] - u_t0[1])**2)
+        d_trans = math.sqrt((u_t1[0] - u_t0[0]) ** 2 + (u_t1[1] - u_t0[1]) ** 2)
         d_rot2 = u_t1[2] - u_t0[2] - d_rot1
 
         # Wrap angles
@@ -99,7 +99,11 @@ class MotionModel:
 
         # Sample noise for all particles at once
         std_rot1 = np.sqrt(self._alpha1 * d_rot1**2 + self._alpha2 * d_trans**2)
-        std_trans = np.sqrt(self._alpha3 * d_trans**2 + self._alpha4 * d_rot1**2 + self._alpha4 * d_rot2**2)
+        std_trans = np.sqrt(
+            self._alpha3 * d_trans**2
+            + self._alpha4 * d_rot1**2
+            + self._alpha4 * d_rot2**2
+        )
         std_rot2 = np.sqrt(self._alpha1 * d_rot2**2 + self._alpha2 * d_trans**2)
 
         d_rot1_hat = d_rot1 - np.random.normal(0, std_rot1, N)
@@ -110,6 +114,8 @@ class MotionModel:
         X_t1 = np.zeros_like(X_t0)
         X_t1[:, 0] = X_t0[:, 0] + d_trans_hat * np.cos(X_t0[:, 2] + d_rot1_hat)
         X_t1[:, 1] = X_t0[:, 1] + d_trans_hat * np.sin(X_t0[:, 2] + d_rot1_hat)
-        X_t1[:, 2] = (X_t0[:, 2] + d_rot1_hat + d_rot2_hat + np.pi) % (2 * np.pi) - np.pi
+        X_t1[:, 2] = (X_t0[:, 2] + d_rot1_hat + d_rot2_hat + np.pi) % (
+            2 * np.pi
+        ) - np.pi
 
         return X_t1

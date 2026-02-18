@@ -77,7 +77,7 @@ class Resampling:
         self.resampling_calls += 1
 
         # Throttle resampling
-        if self.resampling_calls % 5 != 0:
+        if self.resampling_calls % 2 != 0:
             print(
                 "Throttling resampling (vectorised). Call count: {}".format(
                     self.resampling_calls

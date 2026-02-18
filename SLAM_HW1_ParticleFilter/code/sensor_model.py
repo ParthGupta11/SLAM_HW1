@@ -1,8 +1,8 @@
-'''
+"""
     Adapted from course 16831 (Statistical Techniques).
     Initially written by Paloma Sodhi (psodhi@cs.cmu.edu), 2018
     Updated by Wei Dong (weidong@andrew.cmu.edu), 2021
-'''
+"""
 
 import os
 import numpy as np
@@ -19,24 +19,25 @@ class SensorModel:
     References: Thrun, Sebastian, Wolfram Burgard, and Dieter Fox. Probabilistic robotics. MIT press, 2005.
     [Chapter 6.3]
     """
+
     def __init__(self, occupancy_map):
         """
         TODO : Tune Sensor Model parameters here
         The original numbers are for reference but HAVE TO be tuned.
         """
-        self._z_hit = 50
+        self._z_hit = 5
         self._z_short = 0.2
         self._z_max = 1
         self._z_rand = 250
 
-        self._sigma_hit = 50
+        self._sigma_hit = 55
         self._lambda_short = 0.1
 
         # Used in p_max and p_rand, optionally in ray casting
-        self._max_range = 4000
+        self._max_range = 1000
 
         # Used for thresholding obstacles of the occupancy map
-        self._min_probability = 0.35
+        self._min_probability = 0.5
 
         # Used in sampling angles in ray casting
         self._subsampling = 5
@@ -56,11 +57,15 @@ class SensorModel:
         self._ray_cast_table = self._load_or_compute_ray_table()
 
     def _load_or_compute_ray_table(self):
-        cache_path = os.path.join(os.path.dirname(__file__), '..', 'data', 'ray_cast_table.npy')
+        cache_path = os.path.join(
+            os.path.dirname(__file__), "..", "data", "ray_cast_table.npy"
+        )
         if os.path.exists(cache_path):
             print("Loading precomputed ray cast table...")
             table = np.load(cache_path)
-            print(f"Loaded ray cast table: shape={table.shape}, size={table.nbytes/1e6:.1f} MB")
+            print(
+                f"Loaded ray cast table: shape={table.shape}, size={table.nbytes/1e6:.1f} MB"
+            )
             return table
 
         print("Precomputing ray cast table (one-time, ~1-2 min)...")
@@ -84,8 +89,10 @@ class SensorModel:
         free_mask = (self._occupancy_map >= 0) & (self._occupancy_map < min_prob)
         free_rows, free_cols = np.where(free_mask)
         num_free = len(free_rows)
-        print(f"  Computing rays for {num_free} free-space cells "
-              f"(skipping {map_rows * map_cols - num_free} obstacle/unknown cells)")
+        print(
+            f"  Computing rays for {num_free} free-space cells "
+            f"(skipping {map_rows * map_cols - num_free} obstacle/unknown cells)"
+        )
 
         # World coordinates of free cell centers
         x_free = free_cols.astype(np.float64) * resolution + resolution / 2.0
@@ -184,7 +191,7 @@ class SensorModel:
         log_prob = 0.0
 
         for j in range(len(beam_indices)):
-            z_k = z_actual[j]      # actual measurement for beam j
+            z_k = z_actual[j]  # actual measurement for beam j
             z_k_star = z_t_star[j]  # expected measurement for beam j
 
             # p_hit - it is the probability of the measurement given the expected range
@@ -192,7 +199,6 @@ class SensorModel:
                 p_hit = norm.pdf(z_k, loc=z_k_star, scale=sigma)
             else:
                 p_hit = 0.0
-
 
             if 0 <= z_k <= z_k_star and z_k_star > 0:
                 eta_short = 1.0 / (1.0 - math.exp(-lam * z_k_star))
@@ -208,10 +214,12 @@ class SensorModel:
             else:
                 p_rand = 0.0
 
-            p = (self._z_hit * p_hit
-                 + self._z_short * p_short
-                 + self._z_max * p_max
-                 + self._z_rand * p_rand)
+            p = (
+                self._z_hit * p_hit
+                + self._z_short * p_short
+                + self._z_max * p_max
+                + self._z_rand * p_rand
+            )
 
             log_prob += math.log(max(p, 1e-10))
 
@@ -237,9 +245,9 @@ class SensorModel:
         map_rows, map_cols = self._occupancy_map.shape
 
         # Beam angles for all particles: (N, num_beams)
-        beam_angles_deg = (np.rad2deg(
-            thetas[:, None] + np.deg2rad(-90 + beam_indices[None, :])
-        )).astype(int) % 360
+        beam_angles_deg = (
+            np.rad2deg(thetas[:, None] + np.deg2rad(-90 + beam_indices[None, :]))
+        ).astype(int) % 360
 
         # Clamp out-of-bounds particles
         valid = (rows >= 0) & (rows < map_rows) & (cols >= 0) & (cols < map_cols)
@@ -247,7 +255,9 @@ class SensorModel:
         cols_safe = np.clip(cols, 0, map_cols - 1)
 
         # Look up expected ranges: (N, num_beams)
-        z_star = self._ray_cast_table[rows_safe[:, None], cols_safe[:, None], beam_angles_deg]
+        z_star = self._ray_cast_table[
+            rows_safe[:, None], cols_safe[:, None], beam_angles_deg
+        ]
         z_star = z_star.astype(np.float64)
         z_star[~valid] = self._max_range
 
@@ -273,9 +283,7 @@ class SensorModel:
             1.0 / np.maximum(1.0 - np.exp(-lam * z_star), 1e-10),
             0.0,
         )
-        p_short = np.where(
-            short_valid, eta_short * lam * np.exp(-lam * z_k), 0.0
-        )
+        p_short = np.where(short_valid, eta_short * lam * np.exp(-lam * z_k), 0.0)
 
         # p_max
         p_max = np.where(z_k >= z_max, 1.0, 0.0)
@@ -284,8 +292,12 @@ class SensorModel:
         p_rand = np.where((z_k >= 0) & (z_k < z_max), 1.0 / z_max, 0.0)
 
         # Combined probability per beam: (N, num_beams)
-        p = (self._z_hit * p_hit + self._z_short * p_short
-             + self._z_max * p_max + self._z_rand * p_rand)
+        p = (
+            self._z_hit * p_hit
+            + self._z_short * p_short
+            + self._z_max * p_max
+            + self._z_rand * p_rand
+        )
 
         # Log-space sum across beams, then exp
         log_prob = np.sum(np.log(np.maximum(p, 1e-10)), axis=1)

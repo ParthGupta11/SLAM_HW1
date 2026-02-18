@@ -58,7 +58,7 @@ def init_particles_freespace(num_particles, occupancy_map):
     """
     X_bar_init = np.zeros((num_particles, 4))
 
-    idx_free = np.where((occupancy_map < 0.005) & (occupancy_map > 0))
+    idx_free = np.where((occupancy_map < 0.1) & (occupancy_map > 0))
     count_free = len(idx_free[0])
 
     # Randomly sample from free space coordinates
