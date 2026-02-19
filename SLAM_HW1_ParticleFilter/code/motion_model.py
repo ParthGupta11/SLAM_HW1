@@ -22,8 +22,8 @@ class MotionModel:
         """
         self._alpha1 = 0.00001
         self._alpha2 = 0.00001
-        self._alpha3 = 0.00001
-        self._alpha4 = 0.00001
+        self._alpha3 = 0.00005
+        self._alpha4 = 0.00005
 
     def _wrap_angle(self, a):
         """

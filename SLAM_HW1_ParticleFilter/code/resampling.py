@@ -41,7 +41,7 @@ class Resampling:
 
         # Throttle resampling when robot is moving
         self.resampling_calls += 1
-        if self.resampling_calls % 5 != 0:
+        if self.resampling_calls % 1 != 0:
             print("Throttling resampling. Call count: {}".format(self.resampling_calls))
             return X_bar
 
