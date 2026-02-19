@@ -26,12 +26,12 @@ class SensorModel:
         The original numbers are for reference but HAVE TO be tuned.
         """
         self._z_hit = 5
-        self._z_short = 0.2
-        self._z_max = 1
-        self._z_rand = 250
+        self._z_short = 0.8
+        self._z_max = 0.71
+        self._z_rand = 700
 
         self._sigma_hit = 55
-        self._lambda_short = 0.1
+        self._lambda_short = 0.008
 
         # Used in p_max and p_rand, optionally in ray casting
         self._max_range = 1000

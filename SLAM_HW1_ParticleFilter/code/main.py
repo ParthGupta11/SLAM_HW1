@@ -81,6 +81,11 @@ def init_particles_freespace(num_particles, occupancy_map):
         X_bar_init[i, 1] = idx_free[0][idx] * 10.0
         X_bar_init[i, 2] = np.random.uniform(-3.14, 3.14)
 
+        # Fix init to single particle
+        # X_bar_init[i, 0] = idx_free[1][1000] * 10.0
+        # X_bar_init[i, 1] = idx_free[0][1000] * 10.0
+        # X_bar_init[i, 2] = 0
+
         i += 1
 
     X_bar_init[:, 3] = 1.0 / num_particles
