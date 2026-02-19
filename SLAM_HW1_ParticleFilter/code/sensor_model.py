@@ -79,9 +79,9 @@ class SensorModel:
         table = np.full((map_rows, map_cols, 360), self._max_range, dtype=np.float16)
 
         resolution = self._map_resolution
-        step = self._ray_step_size
+        step_size = self._ray_step_size_size
         max_range = self._max_range
-        num_steps = int(max_range / step)
+        num_steps = int(max_range / step_size)
         min_prob = self._min_probability
 
         # Only compute for free-space cells (not obstacles or unknown)
@@ -108,7 +108,7 @@ class SensorModel:
             for s in range(1, num_steps + 1):
                 if not np.any(active):
                     break
-                dist = s * step
+                dist = s * step_size
 
                 # Only compute for still-active cells
                 idx = np.where(active)[0]
@@ -135,95 +135,6 @@ class SensorModel:
 
         print("  Progress: 360/360 angles")
         return table
-
-    def ray_casting(self, x_t1):
-        """
-        Perform ray casting using precomputed lookup table.
-        For each laser beam, look up the expected range from the table.
-        """
-        theta = x_t1[2]
-        x_laser = x_t1[0] + self._laser_offset * math.cos(theta)
-        y_laser = x_t1[1] + self._laser_offset * math.sin(theta)
-
-        beam_indices = np.arange(0, 180, self._subsampling)
-        num_beams = len(beam_indices)
-        z_t_star = np.zeros(num_beams)
-
-        map_rows, map_cols = self._occupancy_map.shape
-        resolution = self._map_resolution
-
-        # Convert laser position to cell coordinates
-        col = int(x_laser / resolution)
-        row = int(y_laser / resolution)
-
-        # Bounds check — if laser is off map, return max_range for all beams
-        if row < 0 or row >= map_rows or col < 0 or col >= map_cols:
-            z_t_star[:] = self._max_range
-            return z_t_star
-
-        for i, k in enumerate(beam_indices):
-            beam_angle = theta + math.radians(-90 + k)
-            # Convert to degree index [0, 360)
-            angle_deg = int(math.degrees(beam_angle)) % 360
-            z_t_star[i] = self._ray_cast_table[row, col, angle_deg]
-
-        return z_t_star
-
-    def beam_range_finder_model(self, z_t1_arr, x_t1):
-        """
-        param[in] z_t1_arr : laser range readings [array of 180 values] at time t
-        param[in] x_t1 : particle state belief [x, y, theta] at time t [world_frame]
-        param[out] prob_zt1 : likelihood of a range scan zt1 at time t
-        Implement the beam range finder model
-        """
-        # expected range measurements from raycasting
-        z_t_star = self.ray_casting(x_t1)
-
-        # subsampling the actual measurements
-        beam_indices = np.arange(0, 180, self._subsampling)
-        z_actual = z_t1_arr[beam_indices]
-
-        z_max = self._max_range
-        sigma = self._sigma_hit
-        lam = self._lambda_short
-
-        # Compute probability in log-space to avoid underflow
-        log_prob = 0.0
-
-        for j in range(len(beam_indices)):
-            z_k = z_actual[j]  # actual measurement for beam j
-            z_k_star = z_t_star[j]  # expected measurement for beam j
-
-            # p_hit - it is the probability of the measurement given the expected range
-            if 0 <= z_k <= z_max:
-                p_hit = norm.pdf(z_k, loc=z_k_star, scale=sigma)
-            else:
-                p_hit = 0.0
-
-            if 0 <= z_k <= z_k_star and z_k_star > 0:
-                eta_short = 1.0 / (1.0 - math.exp(-lam * z_k_star))
-                p_short = eta_short * lam * math.exp(-lam * z_k)
-            else:
-                p_short = 0.0
-
-            #
-            p_max = 1.0 if z_k >= z_max else 0.0
-
-            if 0 <= z_k < z_max:
-                p_rand = 1.0 / z_max
-            else:
-                p_rand = 0.0
-
-            p = (
-                self._z_hit * p_hit
-                + self._z_short * p_short
-                + self._z_max * p_max
-                + self._z_rand * p_rand
-            )
-
-            log_prob += math.log(max(p, 1e-10))
-
-        return math.exp(log_prob)
 
     def beam_range_finder_model_vectorized(self, z_t1_arr, X_t1):
         """
