@@ -52,21 +52,36 @@ def init_particles_random(num_particles, occupancy_map):
 
 def init_particles_freespace(num_particles, occupancy_map):
     # initialize [x, y, theta] positions in world_frame for all particles
+    # TODO: Fix initialization
+    # TODO: For debugging, localize your initialization
     """
     TODO : Add your code here
     This version converges faster than init_particles_random
     """
     X_bar_init = np.zeros((num_particles, 4))
 
-    idx_free = np.where((occupancy_map < 0.1) & (occupancy_map > 0))
+    Y_limits = [3000, 5000]
+    X_limits = [3000, 5000]
+
+    idx_free = np.where((occupancy_map < 0.2) & (occupancy_map >= 0))
     count_free = len(idx_free[0])
 
     # Randomly sample from free space coordinates
-    for i in range(num_particles):
+    i = 0
+    while i < num_particles:
         idx = np.random.randint(0, count_free)
+
+        x = idx_free[1][idx] * 10.0
+        y = idx_free[0][idx] * 10.0
+
+        # if x < X_limits[0] or x > X_limits[1] or y < Y_limits[0] or y > Y_limits[1]:
+        #     continue
+
         X_bar_init[i, 0] = idx_free[1][idx] * 10.0
         X_bar_init[i, 1] = idx_free[0][idx] * 10.0
         X_bar_init[i, 2] = np.random.uniform(-3.14, 3.14)
+
+        i += 1
 
     X_bar_init[:, 3] = 1.0 / num_particles
 
